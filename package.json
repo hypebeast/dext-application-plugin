@@ -1,0 +1,20 @@
+{
+  "name": "dext-application-plugin",
+  "version": "0.1.0",
+  "description": "Dext plugin to search local applications.",
+  "keywords": [
+    "dext",
+    "dext-plugin",
+    "linux",
+    "application",
+    "search"
+  ],
+  "main": "index.js",
+  "author": "Sebastian Ruml <sebastian@sebastianruml.name>",
+  "license": "MIT",
+  "dependencies": {
+    "lodash": "^4.15.0",
+    "xdg-basedir": "^2.0.0",
+    "xdg-parse": "0.0.2"
+  }
+}
