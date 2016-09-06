@@ -14,6 +14,7 @@
   "license": "MIT",
   "dependencies": {
     "lodash": "^4.15.0",
+    "which": "^1.2.11",
     "xdg-basedir": "^2.0.0",
     "xdg-parse": "0.0.2"
   }

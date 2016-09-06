@@ -4,13 +4,92 @@ const fs = require('fs');
 const path = require('path');
 const xdg = require('xdg-basedir');
 const parser = require('xdg-parse');
+const which = require('which');
 
 const SUPPORTED_PLATFORMS = [
   'linux'
 ];
 
 
-const readXdrFile = (file) => {
+/**
+ * [getCommand description]
+ * @param  {[type]} exec [description]
+ * @return {[type]}      [description]
+ */
+const getCommand = (exec) => {
+  var fullCommand = exec;
+  var resolved;
+
+  if (!fullCommand) {
+    return undefined;
+  }
+
+  // Remove the field code
+  fullCommand = fullCommand.trim().replace(/\s%[a-zA-Z]/, '');
+
+  var commandParts = fullCommand.split(' ');
+
+  // No command found
+  if (commandParts.length < 1) {
+    return undefined;
+  }
+
+  // Find the absolute path
+  try {
+    commandParts[0] = which.sync(commandParts[0]);
+  } catch (e) {
+    return undefined;
+  }
+
+  return commandParts.join(' ');
+};
+
+
+/**
+ * [getXdgAppIcon description]
+ * @param  {[type]} app [description]
+ * @return {[type]}     [description]
+ */
+const getXdgAppIcon = (icon) => {
+  var result;
+
+  if (!icon) {
+    return '';
+  }
+
+  if (path.isAbsolute(icon)) {
+    result = icon;
+  }
+
+  if (result) {
+    console.log(result);
+  }
+
+  // TODO: Handle relative paths
+
+  return result;
+};
+
+
+/**
+ * [filterXdgApp description]
+ * @param  {[type]} app [description]
+ * @return {[type]}     [description]
+ */
+const filterXdgApp = (app) => {
+  return app.name &&
+          app.description &&
+          app.exec &&
+          !app.terminal &&
+          app.type === 'Application';
+};
+
+/**
+ * [readXdgFile description]
+ * @param  {[type]} file [description]
+ * @return {[type]}      [description]
+ */
+const readXdgFile = (file) => {
   return new Promise((resolve, reject) => {
     fs.readFile(file, { encoding: 'utf8' }, (err, content) => {
       if (err) {
@@ -25,11 +104,11 @@ const readXdrFile = (file) => {
 
       const result = {
         name: desktopEntry.Name,
-        comment: desktopEntry.Comment,
-        exec: desktopEntry.Exec,
+        description: desktopEntry.Comment,
+        exec: getCommand(desktopEntry.Exec),
         type: desktopEntry.Type,
-        terminal: desktopEntry.Terminal,
-        icon: desktopEntry.Icon
+        terminal: desktopEntry.Terminal ? desktopEntry.Terminal === 'true' : false,
+        icon: getXdgAppIcon(desktopEntry.Icon)
       };
 
       resolve(result);
@@ -37,12 +116,13 @@ const readXdrFile = (file) => {
   });
 };
 
+
 /**
- * [readXdrDir description]
+ * [readXdgDir description]
  * @param  {[type]} directory [description]
  * @return {[type]}           [description]
  */
-const readXdrDir = (directory) => {
+const readXdgDir = (directory) => {
   return new Promise((resolve, reject) => {
     fs.readdir(directory, (err, files) => {
       if (err) {
@@ -57,25 +137,18 @@ const readXdrDir = (directory) => {
         return regEx.test(file);
       });
 
-      Promise.all(files.map(file => readXdrFile(path.join(directory, file))))
-        .then(apps => {
-
-          apps = apps.filter(app => {
-            return app.name && app.comment && app.exec && app.type === 'Application';
-          });
-
-          resolve(apps);
-        });
+      Promise.all(files.map(file => readXdgFile(path.join(directory, file))))
+        .then(resolve);
     });
   });
 };
 
 
 /**
- * [getXdrDirs description]
+ * [getXdgDirs description]
  * @return {[type]} [description]
  */
-const getXdrDirs = () => {
+const getXdgDirs = () => {
   const localPath = 'applications';
 
   return xdg['dataDirs'].map(dir => {
@@ -83,25 +156,28 @@ const getXdrDirs = () => {
   });
 };
 
+
 /**
- * Return all applications that can be found through XDR desktop files.
+ * Return all applications that can be found through XDG desktop files.
  *
  * @return {[type]} [description]
  */
-const getXdrApps = () => {
-  const appDirs = getXdrDirs();
+const getXdgApps = () => {
+  const appDirs = getXdgDirs();
 
   return Promise.all(appDirs.map(dir => {
-    return readXdrDir(dir);
+    return readXdgDir(dir);
   }))
     .then(apps => {
-      apps = _.flatten(apps);
-
-      return _.uniqBy(apps, app => {
-        return app.name;
-      })
-    })
+      return _.chain(apps)
+        .flatten()
+        .filter(filterXdgApp)
+        .uniqBy(app => app.name)
+        .sortBy('name')
+        .value();
+    });
 };
+
 
 /**
  * Get the platform.
@@ -111,6 +187,7 @@ const getPlatform = () => {
 
     return (SUPPORTED_PLATFORMS.indexOf(platform) >= 0) ? platform : undefined;
 };
+
 
 /**
  * [getApps description]
@@ -124,28 +201,30 @@ const getApps = () => {
   }
 
   if (platform === 'linux') {
-    return getXdrApps();
+    return getXdgApps();
   }
 };
 
+
 /**
- * [filterApps description]
+ * [queryApps description]
  * @param  {[type]} apps [description]
  * @param  {[type]} q    [description]
  * @return {[type]}      [description]
  */
-const filterApps = (apps, q) => {
+const queryApps = (apps, q) => {
   const pattern = '^.*(' + q + ').*$';
   const regEx = new RegExp(pattern, 'i');
 
   return apps.filter(app => {
-    return regEx.test(app.name) || regEx.test(app.comment);
+    return regEx.test(app.name) || regEx.test(app.description);
   })
 };
 
+
 module.exports = {
   keyword: 'app',
-  action: 'openurl',
+  action: 'openlocal',
   helper: {
     title: 'Search for local applications',
     subtitle: 'Example: app xterm'
@@ -153,10 +232,13 @@ module.exports = {
   execute: q => new Promise(resolve => {
     getApps()
       .then(result => {
-        const items = filterApps(result, q).map(app => Object.assign({}, {
+        const items = queryApps(result, q).map(app => Object.assign({}, {
           title: app.name,
-          subtitle: app.comment,
-          arg: app.exec
+          subtitle: app.description,
+          arg: app.exec,
+          icon: {
+            path: app.icon
+          }
         }));
 
         resolve({ items });
